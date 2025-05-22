@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Field Data Logger - Mode Controlled</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    input, button, select, textarea { margin: 5px 0; padding: 6px; }
+    label { font-weight: bold; display: block; margin-top: 10px; }
+    .row { display: flex; gap: 20px; flex-wrap: wrap; justify-content: space-between; }
+    .column { flex: 1; min-width: 300px; }
+    .input-group { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+    .input-group label { width: 60px; }
+    .input-group input { width: 80px; }
+    .input-group textarea { width: 160px; height: 34px; resize: none; }
+  </style>
+</head>
+<body>
+
+<h2>Field Data Logger</h2>
+
+<label>Choose Mode:</label>
+<select id="modeSelect" onchange="handleModeChange()">
+  <option value="" disabled selected>Select Mode</option>
+  <option value="new">Create New File</option>
+  <option value="update">Update Existing File</option>
+</select>
+
+<div id="fileUploadArea" style="display:none;">
+  <label>Upload Existing Excel File:</label>
+  <input type="file" id="excelFile" accept=".xlsx">
+</div>
+
+<label>Select Variable (Sheet Name):</label>
+<select id="variableSelect" onchange="selectVariable()">
+  <option value="" disabled selected>Choose or Add Variable</option>
+</select>
+
+<label>Or Add New Variable:</label>
+<input type="text" id="newVariable" placeholder="e.g., Temperature">
+<button onclick="addVariable()">Add Variable</button>
+
+<div id="entryArea" style="display:none;">
+  <label>Select Date:</label>
+  <input type="date" id="entryDate">
+  <div class="row" id="sampleInputsRow"></div>
+  <button onclick="saveEntry()">Save Entry</button>
+</div>
+
+<label>Output File Name:</label>
+<input type="text" id="fileNameInput" placeholder="e.g., Field_Data.xlsx">
+
+<button onclick="downloadExcel()">Download Excel File</button>
+
+<script>
+let mode = "";
+let workbook;
+let currentVariable = "";
+let allSamples = [];
+
+const col1 = ["2-1","2-2","2-3","2-4","2-5","2-6","2-7","3-1","3-2","3-3","3-4","3-5","3-6","3-7","1-1","1-2","1-3","1-4","1-5","1-6","1-7","4-1","4-2","4-3","4-4","4-5","4-6","4-7"];
+const col2 = ["3-8","3-9","3-10","3-11","3-12","3-13","3-14","4-8","4-9","4-10","4-11","4-12","4-13","4-14","2-8","2-9","2-10","2-11","2-12","2-13","2-14","1-8","1-9","1-10","1-11","1-12","1-13","1-14"];
+const col3 = ["4-15","4-16","4-17","4-18","4-19","4-20","4-21","1-15","1-16","1-17","1-18","1-19","1-20","1-21","3-15","3-16","3-17","3-18","3-19","3-20","3-21","2-15","2-16","2-17","2-18","2-19","2-20","2-21"];
+
+document.getElementById("excelFile").addEventListener("change", handleFile);
+
+function handleModeChange() {
+  mode = document.getElementById("modeSelect").value;
+  if (mode === "new") {
+    workbook = XLSX.utils.book_new();
+    document.getElementById("fileUploadArea").style.display = "none";
+    document.getElementById("excelFile").value = "";
+    document.getElementById("variableSelect").innerHTML = '<option value="" disabled selected>Choose or Add Variable</option>';
+  } else if (mode === "update") {
+    document.getElementById("fileUploadArea").style.display = "block";
+  }
+}
+
+function handleFile(event) {
+  const file = event.target.files[0];
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const data = new Uint8Array(e.target.result);
+    workbook = XLSX.read(data, {type: "array"});
+    const dropdown = document.getElementById("variableSelect");
+    dropdown.innerHTML = '<option value="" disabled selected>Select Variable</option>';
+    workbook.SheetNames.forEach(name => {
+      const option = document.createElement("option");
+      option.value = name;
+      option.text = name;
+      dropdown.add(option);
+    });
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function addVariable() {
+  const varName = document.getElementById("newVariable").value.trim();
+  if (!varName) return;
+  const dropdown = document.getElementById("variableSelect");
+  const option = document.createElement("option");
+  option.value = varName;
+  option.text = varName;
+  dropdown.add(option);
+  dropdown.value = varName;
+  selectVariable();
+  document.getElementById("newVariable").value = "";
+}
+
+function selectVariable() {
+  currentVariable = document.getElementById("variableSelect").value;
+  document.getElementById("entryArea").style.display = "block";
+
+  const container = document.getElementById("sampleInputsRow");
+  container.innerHTML = "";
+
+  const groups = {col1, col2, col3};
+  allSamples = [...col1, ...col2, ...col3];
+
+  if (!workbook.Sheets[currentVariable]) {
+    const data = [["Sample"]];
+    allSamples.forEach(sample => data.push([sample]));
+    workbook.Sheets[currentVariable] = XLSX.utils.aoa_to_sheet(data);
+    if (!workbook.SheetNames.includes(currentVariable)) {
+      workbook.SheetNames.push(currentVariable);
+    }
+  }
+
+  Object.values(groups).forEach(group => {
+    const colDiv = document.createElement("div");
+    colDiv.className = "column";
+    group.forEach(sample => {
+      const inputGroup = document.createElement("div");
+      inputGroup.className = "input-group";
+
+      const label = document.createElement("label");
+      label.innerText = sample;
+
+      const input = document.createElement("input");
+      input.type = "number";
+      input.id = "val_" + sample;
+
+      const note = document.createElement("textarea");
+      note.placeholder = "Remark";
+      note.id = "remark_" + sample;
+
+      inputGroup.appendChild(label);
+      inputGroup.appendChild(input);
+      inputGroup.appendChild(note);
+      colDiv.appendChild(inputGroup);
+    });
+    container.appendChild(colDiv);
+  });
+}
+
+function saveEntry() {
+  const date = document.getElementById("entryDate").value;
+  if (!date) {
+    alert("Please select a date.");
+    return;
+  }
+
+  let sheet = workbook.Sheets[currentVariable] || XLSX.utils.aoa_to_sheet([["Sample"]]);
+  let data = XLSX.utils.sheet_to_json(sheet, {header: 1});
+  let header = data[0] || ["Sample"];
+  let dateCol = header.indexOf(date);
+  let remarkCol = header.indexOf(date + "_Remark");
+
+  if (dateCol === -1) {
+    header.push(date);
+    header.push(date + "_Remark");
+    data[0] = header;
+    allSamples.forEach(sample => {
+      let row = data.find(r => r[0] === sample);
+      const value = document.getElementById("val_" + sample).value;
+      const remark = document.getElementById("remark_" + sample).value;
+      if (row) {
+        row[header.length - 2] = value;
+        row[header.length - 1] = remark;
+      } else {
+        let newRow = Array(header.length).fill("");
+        newRow[0] = sample;
+        newRow[header.length - 2] = value;
+        newRow[header.length - 1] = remark;
+        data.push(newRow);
+      }
+    });
+  } else {
+    allSamples.forEach(sample => {
+      let row = data.find(r => r[0] === sample);
+      if (row) {
+        row[dateCol] = document.getElementById("val_" + sample).value;
+        row[remarkCol] = document.getElementById("remark_" + sample).value;
+      }
+    });
+  }
+
+  workbook.Sheets[currentVariable] = XLSX.utils.aoa_to_sheet(data);
+  alert("✅ Data has been saved successfully!");
+  allSamples.forEach(sample => {
+    document.getElementById("val_" + sample).value = "";
+    document.getElementById("remark_" + sample).value = "";
+  });
+}
+
+function downloadExcel() {
+  let filename = document.getElementById("fileNameInput").value.trim();
+  if (!filename) {
+    filename = "Updated_Field_Data.xlsx";
+  } else if (!filename.endsWith(".xlsx")) {
+    filename += ".xlsx";
+  }
+  XLSX.writeFile(workbook, filename);
+}
+</script>
+</body>
+</html>
